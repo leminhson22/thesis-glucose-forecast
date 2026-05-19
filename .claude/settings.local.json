@@ -18,7 +18,19 @@
       "Bash(awk -F, '{print $1, $3, $4, $5, $6}')",
       "Bash(sort -k4 -g)",
       "Bash(awk -F, 'NR>1 {print $3, $4}' E:/claude-co-work/outputs/tables/hupa_eda_acf_by_lag.csv)",
-      "Bash(awk '{lag=$1; acf=$2; sum[lag]+=acf; n[lag]++} END {for \\(l in sum\\) print l, sum[l]/n[l]}')"
+      "Bash(awk '{lag=$1; acf=$2; sum[lag]+=acf; n[lag]++} END {for \\(l in sum\\) print l, sum[l]/n[l]}')",
+      "Bash(tasklist /FI \"IMAGENAME eq python.exe\" /FO TABLE)",
+      "PowerShell(Get-Process *)",
+      "Bash(dir E:\\\\claude-co-work\\\\outputs\\\\tables\\\\phase_b_*.csv /B)",
+      "Bash(dir E:\\\\claude-co-work\\\\outputs\\\\models\\\\*phase_b* /B)",
+      "Bash(dir E:\\\\claude-co-work\\\\src\\\\*.py /B)",
+      "Bash(where python *)",
+      "Bash(py -0)",
+      "Bash(\"F:\\\\Apps\\\\anaconda3\\\\python.exe\" -c \"import torch; print\\('torch', torch.__version__, 'cuda', torch.cuda.is_available\\(\\)\\)\")",
+      "Bash(\"C:\\\\Users\\\\MY DELL\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python310\\\\python.exe\" -c \"import torch; print\\('torch', torch.__version__\\)\")",
+      "Bash(F:\\\\Apps\\\\anaconda3\\\\python.exe *)",
+      "Bash(\"F:\\\\Apps\\\\anaconda3\\\\python.exe\" src/_build_notebook_04c1.py)",
+      "Bash(\"F:\\\\Apps\\\\anaconda3\\\\python.exe\" -c \"import json; json.loads\\(open\\('notebooks/04c1_phase_c1_lstm_gru.ipynb', encoding='utf-8'\\).read\\(\\)\\); print\\('notebook JSON is valid'\\)\")"
     ]
   }
 }

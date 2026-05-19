@@ -370,6 +370,7 @@ Report all metrics per model, per forecasting horizon, and per patient where fea
 
 | Metric | Purpose |
 |---|---|
+| MSE | Squared-error objective and training-loss alignment |
 | RMSE | Overall error magnitude |
 | MAE | Robust average error |
 | MAPE | Relative error (only if safe for glucose scale) |
@@ -380,7 +381,20 @@ Report all metrics per model, per forecasting horizon, and per patient where fea
 | Error by patient | Is performance consistent across subjects? |
 | Error by horizon | How does error grow with prediction distance? |
 
+At minimum, every completed model must report **MSE, RMSE, and MAE** on the same held-out split, in the target's real clinical unit whenever possible. For HUPA-UCM, compute and report MSE/RMSE/MAE after inverse-scaling predictions to **mg/dL** if any target scaling was used during training. R2 may be included as a secondary, unitless explained-variance statistic, but it must not replace error magnitudes or clinical-zone analysis.
+
 If the hybrid model does not outperform all baselines, analyze the reasons honestly and suggest concrete improvements. Do not manipulate results.
+
+### 5.6 Required Post-Training Comparison Artefacts
+After all baseline and neural models for a phase are trained, produce comparison artefacts before writing conclusions:
+
+- A master metric table with one row per `(model, split, horizon)` and columns for `MSE`, `RMSE`, `MAE`, optional `R2`, patient-averaged metrics, and Clarke EGA zone percentages.
+- A per-zone error table for hypo / TIR / hyper at each horizon, with hypoglycaemia results highlighted in the written interpretation.
+- A prediction-vs-actual table containing `participant_id`, timestamp or window index, split, horizon, `y_true`, `y_pred`, absolute error, squared error, glycaemic zone, and model name.
+- Prediction-vs-actual scatter plots for each horizon, with the identity line `y = x` and consistent axes in mg/dL.
+- Time-series overlay figures for representative patients or windows, showing actual glucose and model forecasts at 30/60/90 minutes.
+- Residual/error-distribution plots by horizon and glycaemic zone to expose systematic bias, especially under-prediction or over-prediction in hypoglycaemia.
+- If uncertainty quantification is implemented, include uncertainty-band plots, calibration/coverage tables, interval-width summaries, and a variance-convergence figure showing how predictive variance stabilizes as MC-dropout samples, ensemble members, or conformal calibration size increase.
 
 ---
 

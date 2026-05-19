@@ -37,3 +37,4 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+.claude/settings.local.json

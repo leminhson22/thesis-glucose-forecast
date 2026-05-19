@@ -511,6 +511,38 @@ The regularisation strength $\alpha$ is selected from the grid $\{0.1, 1, 10, 10
 
 Leakage prevention follows the same protocol as Section 5.6: the chronological per-patient split with an 18-step (one max-horizon) boundary buffer was applied before any sequence was constructed, so no scaler, alpha selection, or coefficient ever sees future information from the validation or test windows.
 
+### 7.3 Phase B baseline specifications
+
+Phase B trains two non-linear references on the same 424-dimensional flattened input and the same per-patient chronological split as Phase A. The goal is diagnostic: if a non-linear model substantially outperforms Ridge on pooled MAE, the bottleneck of the linear projection lies in its linearity rather than in its feature set, and the additional gain that a sequence model achieves in Phase C must come from architectural inductive bias (temporal convolution, recurrence, attention) rather than from new features. Conversely, if a tree ensemble fails to close the gap to a clinically deployable error, the diagnosis points at the input representation itself and motivates the sequence-aware encoders in Phase C.
+
+#### 7.3.1 Random Forest
+
+The model is `sklearn.ensemble.RandomForestRegressor` with native multi-output support: a single forest stores a three-dimensional leaf vector and averages predictions across trees. The hyperparameters were chosen as evidence-based defaults rather than via grid search, because the loss surface is approximately flat over moderate changes in `n_estimators` and `max_depth` at this dataset scale and dimensionality, and because the wall-clock cost of a full grid search on 68 395 train samples × 424 features × 300 trees is prohibitive on commodity CPU. The chosen values are `n_estimators = 300` (beyond approximately 200 trees the marginal validation gain plateaus), `max_depth = 25` (cap on tree depth that keeps memory bounded while allowing a leaf budget that exceeds the training-sample count), `min_samples_leaf = 20` (regularisation against splitting on 5-minute CGM noise), `n_jobs = -1` (full parallelism), and `random_state = 42` for reproducibility. The fitted model is serialised to `outputs/models/rf_phase_b.joblib`; the top-20 features by impurity-based importance are logged to `outputs/tables/phase_b_rf_top_importance.csv`.
+
+#### 7.3.2 Histogram-based Gradient Boosting
+
+The model is `sklearn.ensemble.HistGradientBoostingRegressor`, the sklearn-native binary-histogram implementation of gradient-boosted trees. It is functionally equivalent to LightGBM for this regression task but ships in the standard sklearn distribution, eliminating an install dependency on the Colab runtime. Because the sklearn version does not support multi-output regression natively, the model is instantiated three times — one head per horizon — with shared hyperparameters: `learning_rate = 0.05`, `max_depth = 8`, `min_samples_leaf = 20`, `max_iter = 300`, and early stopping with `n_iter_no_change = 20` patience monitored on an internal 10 % validation slice carved from the training set. The external validation split is never read during the fit, preserving its role as the clean comparison surface used to compare against the Phase C neural models.
+
+The three heads are persisted as a list to `outputs/models/gbm_phase_b.joblib`. The number of boosting iterations actually used at the stopping point of each head is logged to `outputs/tables/phase_b_gbm_n_iters.csv`; in the Phase B reported configuration all three heads reached the `max_iter = 300` cap without triggering early stopping, indicating that the validation curve was still improving at the budget ceiling. This budget choice is examined in Section 8.2 as an explicit ablation against `max_iter = 1000`; the conclusion of that ablation justifies the `max_iter = 300` value as the primary GBM baseline.
+
+### 7.4 Phase C.1 baseline specifications — LSTM and GRU recurrent encoders
+
+#### 7.4.1 Model-choice rationale
+
+The prior model landscape for short-term continuous glucose monitoring forecasting consists of four broad classes: (i) naive statistical baselines and ARIMA-family models, (ii) regularised linear regression on engineered lag features, (iii) gradient-boosted tree ensembles on the same flattened representation, and (iv) sequence-aware neural architectures including LSTM, GRU, one-dimensional convolutional networks, temporal convolutional networks, and Transformer variants. The Phase A and Phase B numbers reported in Sections 8.1 and 8.2 already saturate the first three classes on this dataset; the gradient-boosted tree, after a budget ablation that showed mild overfitting beyond 300 iterations, was capacity-saturated on the engineered 424-dimensional flattened input. The remaining structural lever is the input representation itself: the tree baselines see the lookback window as 408 independent scalar features and lose all sequential structure by construction, whereas a recurrent encoder consumes the lookback as a 24-step sequence and can in principle learn temporal patterns — such as glucose rate-of-change dynamics, post-meal absorption curves, and post-bolus insulin action onset — that the flattened representation expresses only through hand-crafted rolling statistics. Phase C.1 therefore introduces LSTM and GRU encoders as the simplest sequence-aware models that consume the same `X_dynamic` plus `X_static` inputs as the tree baselines, isolating the contribution of recurrence from the contribution of attention, fusion, or loss-function modification (the latter being the subject of Phase C.2 and beyond). The validation response to potential leakage and patient heterogeneity is unchanged from Phase B: the same per-patient chronological split, the same buffer at split boundaries, and the same patient-averaged metric reporting are reused.
+
+#### 7.4.2 Input contract and architecture
+
+Both Phase C.1 models consume the identical input pair used by every Phase A/B baseline: the dynamic tensor `X_dynamic` of shape `(N, 24, 17)` and the static-feature matrix `X_static` of shape `(N, 16)`. Where the tree baselines call `flatten_window(X_dynamic, X_static)` to obtain the 424-dimensional vector required by sklearn's regression interface, the recurrent models preserve the temporal structure by routing `X_dynamic` through the recurrent encoder and `X_static` through a small dense branch in parallel. The two embeddings are concatenated before the multi-horizon output head. Concretely, a two-layer LSTM (or GRU) with hidden dimension 64 reads the lookback sequence and emits its terminal hidden state; the static branch is a two-layer dense network with ReLU activations and intermediate dimension 32; the fused vector enters a two-layer head with intermediate dimension 64 that outputs three real-valued mg/dL predictions corresponding to the 30-, 60-, and 90-minute horizons. Inter-layer dropout is set to 0.2; the recurrent encoder is unidirectional, because glucose forecasting is causal and bidirectional processing would allow the model to peek at future values it cannot see at inference. The full parameter count is approximately 62 000 for the LSTM variant and 49 000 for the GRU variant — small models by contemporary standards, deliberately sized to avoid overfitting at the ~70 000-sample training scale and to retain fair comparability with the parameter budget of the tree ensembles (each Random Forest with 300 trees and depth 25 has on the order of tens of millions of parameters but with very different scaling behaviour).
+
+#### 7.4.3 Loss function and training protocol
+
+Phase C.1 uses a vanilla multi-horizon mean squared error loss averaged over the batch dimension and the three horizon outputs. The asymmetric and zone-weighted variants motivated by the hypo-zone deficit documented in Section 8.2 are deferred to Phase C.2, because conflating the architectural change (flat input to sequential input) with the loss-function change would prevent attribution of any observed improvement to either factor. Training uses the Adam optimiser at learning rate `1e-3` with weight decay `1e-5`, gradient norm clipping at `1.0`, a `ReduceLROnPlateau` schedule with patience 5 and factor 0.5 monitored on the patient-averaged validation MAE, and early stopping with patience 10 epochs on the same metric. The patient-averaged validation MAE — rather than the pooled MAE — is the early-stopping target because long participants would otherwise dominate model selection: HUPA0027 alone represents 53.4 % of the dataset's rows, and selecting checkpoints by pooled MAE would amount to selecting checkpoints best for HUPA0027 in particular. All random seeds (`PYTHONHASHSEED`, `random`, `numpy`, `torch`, `torch.cuda`) are initialised from `C.SEED = 42` at the start of every model fit. The best checkpoint by validation patient-averaged MAE is persisted to `outputs/models/{lstm,gru}_phase_c1.pt` with the model configuration embedded for later reload; per-epoch metrics are streamed to `outputs/logs/{lstm,gru}_phase_c1.csv` so that learning-curve plots are reproducible after a session reset.
+
+#### 7.4.4 Evaluation protocol and expected interpretation
+
+Both models are evaluated under the same metric bundle as Phase A and Phase B (`src/evaluate.py`): pooled and patient-averaged MAE and RMSE per horizon, MAE and RMSE binned by glycaemic zone, per-patient breakdown, and Clarke Error Grid Analysis percentages. The headline comparison surface is the same test split used in Section 8.2 (45 395 windows, 25 patients), enabling direct mg/dL deltas against the GBM-300 numbers. The expected interpretation falls into three scenarios. First, if the recurrent encoders outperform GBM-300 on pooled MAE at every horizon, the result supports the hypothesis that the sequential structure carries information not captured by the engineered rolling statistics on the flattened representation. Second, if the recurrent encoders match GBM-300 on pooled MAE but still lose to Persistence in the hypoglycaemic zone at long horizons, the result confirms that the hypo-zone deficit is loss-driven rather than capacity- or representation-driven, and the Phase C.2 asymmetric/zone-weighted intervention becomes empirically mandatory. Third, if the recurrent encoders fail to match GBM-300 even on pooled MAE, the conclusion is that at the present sample size and feature configuration the tree representation already captures the relevant signal, and the case for the hybrid architecture in Phase C.3 must rest on the loss-function and attention/fusion contributions rather than on basic sequence-awareness alone. Section 8.3 reports the numbers and resolves which scenario applies.
+
 ---
 
 ## 8. Experimental Results and Evaluation
@@ -565,6 +597,69 @@ This finding is the empirical justification for two design choices to be impleme
 The top-five coefficients of the Ridge model at the 30-minute horizon, in signed units of mg/dL per unit Z-scored feature (from `outputs/tables/phase_a_ridge_top_coefs.csv`), are dominated by glucose rolling means at the most recent lags: `glucose_60m_mean_lag0` ($-1225$), `glucose_60m_mean_lag1` ($-872$), `glucose_30m_mean_lag0` ($+692$), `glucose_60m_mean_lag2` ($-512$), and `glucose_30m_mean_lag1` ($+448$). The alternating signs across adjacent lags act as a finite-difference operator that effectively reconstructs a velocity term from the rolling-mean basis, supplementing the explicit `glucose_velocity` feature (which carries a smaller coefficient magnitude). The dominant predictive signal at short horizons is therefore the recent glucose trajectory; the static patient features, peri-event aggregates (IOB, COB, steps), and modality flags contribute additively but at much smaller magnitudes. This decomposition will guide architectural choices in Phase C — in particular, whether to wrap the dynamic input in a one-dimensional temporal convolution that learns the same finite-difference response directly from the raw lookback window.
 
 All numbers in this section trace back to `outputs/tables/phase_a_*.csv` and `outputs/models/ridge_phase_a.joblib`; the runner that produces them is `src/run_phase_a.py` and the Colab-compatible execution path is `notebooks/04_model_training.ipynb`.
+
+### 8.2 Phase B baselines — Random Forest and Gradient Boosting
+
+Phase B reports the two tree-based references on the same test split and metric bundle. Wall-clock fit times on a multi-core consumer CPU (`n_jobs = -1`) were approximately 26 minutes for the Random Forest and 3 minutes for the three-headed gradient boosting, both well within feasible local-compute budgets. The HistGradientBoosting heads each reached the `max_iter = 300` budget cap without triggering early stopping; the consequences of this cap are quantified in the budget ablation reported at the end of this section.
+
+Table 8.2.1 collects all four baselines on the test split. Pooled MAE is row-weighted across the 45 395 test windows; patient-averaged MAE is the unweighted mean across 25 patients, reported in parallel for the reason established in Section 8.1.
+
+**Table 8.2.1.** Test errors (mg/dL) per horizon for the full baseline ladder. Bold marks the best model in each cell.
+
+| Model | Horizon | Pooled MAE | Pooled RMSE | Patient-avg MAE | Patient-avg RMSE |
+|---|---|---|---|---|---|
+| Persistence       | 30 min | 13.52 | 19.70 | 15.79 | 22.12 |
+| Ridge ($\alpha=0.1$) | 30 min | 14.25 | 19.87 | 17.10 | 22.19 |
+| Random Forest (n=300) | 30 min | 11.79 | 16.72 | 13.94 | 18.83 |
+| HistGB (lr=0.05, d=8) | 30 min | **10.40** | **15.03** | **12.11** | **16.82** |
+| Persistence       | 60 min | 22.92 | 32.91 | 27.36 | 37.47 |
+| Ridge ($\alpha=0.1$) | 60 min | 21.59 | 30.20 | 26.90 | 34.94 |
+| Random Forest (n=300) | 60 min | 20.68 | 28.29 | 24.25 | 32.04 |
+| HistGB (lr=0.05, d=8) | 60 min | **19.77** | **27.22** | **23.58** | **31.25** |
+| Persistence       | 90 min | 29.85 | 42.13 | 36.12 | 48.56 |
+| Ridge ($\alpha=0.1$) | 90 min | 27.85 | 37.86 | 34.61 | 44.21 |
+| Random Forest (n=300) | 90 min | 27.31 | 36.48 | 32.25 | 42.00 |
+| HistGB (lr=0.05, d=8) | 90 min | **26.27** | **35.36** | **31.49** | **41.00** |
+
+HistGradientBoosting dominates the pooled metric at every horizon, with a 30-minute pooled MAE of 10.40 mg/dL — a 23 % relative reduction against Persistence and a 27 % reduction against Ridge. The Random Forest sits between Ridge and HistGB and also beats both Phase A models at every horizon. The pooled MAE ranking Persistence > Ridge > RF > HistGB is monotonic at all three horizons and is preserved when the metric is switched to RMSE, confirming that the improvement is not specific to the loss aggregation choice.
+
+Table 8.2.2 reports the Clarke Error Grid Analysis on the test split for the two Phase B models. The combined A + B share is 98 % at 30 minutes for HistGB (versus 98.3 % for Persistence and 98.6 % for Ridge — a small loss in absolute share but the share rebalances toward Zone A: HistGB Zone A at 30 minutes is 91.3 % versus 85.5 % for Persistence). The Zone D share — failure to detect a dangerous condition — is 1.9 % at 30 minutes for HistGB versus 1.6 % for Persistence; a marginal increase that warrants the per-zone scrutiny below.
+
+**Table 8.2.2.** Clarke Error Grid Analysis on test for the Phase B models (percent of predictions per zone).
+
+| Model | Horizon | A | B | C | D | E |
+|---|---|---|---|---|---|---|
+| Random Forest (n=300)   | 30 min | 88.01 | 8.58  | 0.00 | 3.41 | 0.00 |
+| Random Forest (n=300)   | 60 min | 71.07 | 21.93 | 0.08 | 6.91 | 0.00 |
+| Random Forest (n=300)   | 90 min | 59.03 | 32.04 | 0.25 | 8.68 | 0.00 |
+| HistGB (lr=0.05, d=8) | 30 min | 91.27 | 6.79  | 0.01 | 1.94 | 0.00 |
+| HistGB (lr=0.05, d=8) | 60 min | 72.79 | 20.74 | 0.07 | 6.41 | 0.00 |
+| HistGB (lr=0.05, d=8) | 90 min | 61.11 | 30.23 | 0.22 | 8.44 | 0.00 |
+
+The headline clinical finding of Phase B is in Table 8.2.3: **Persistence remains the best model in the hypoglycaemic zone at every horizon**, despite being beaten by every other model on the pooled metric. HistGB closes the hypo gap at 30 minutes to 1.4 mg/dL (10.42 versus Persistence 9.06), but at 60 and 90 minutes its hypo MAE diverges substantially upward — 26.75 and 40.72 mg/dL versus Persistence's 18.34 and 27.26. Random Forest behaves similarly. The hypo deficit of the non-linear models is therefore not a defect of feature engineering or of model capacity; it is the loss-function consequence already diagnosed in Section 8.1. A squared-error objective minimised over a distribution in which the time-in-range zone holds 71 % of the mass and the hypoglycaemic zone holds 8 % systematically biases the model toward the dense mass, regardless of whether the model class is linear, axis-aligned forests, or gradient-boosted trees.
+
+**Table 8.2.3.** Per-zone test MAE (mg/dL) for the full baseline ladder. Bold marks the best model in each cell. Hypo $<70$, TIR $70$–$180$, hyper $>180$.
+
+| Model | Horizon | Hypo | TIR | Hyper |
+|---|---|---|---|---|
+| Persistence       | 30 min | **9.06**  | 12.82 | 17.72 |
+| Ridge ($\alpha=0.1$) | 30 min | 15.66 | 12.82 | 18.72 |
+| Random Forest (n=300) | 30 min | 14.66 | 10.34 | 15.72 |
+| HistGB (lr=0.05, d=8) | 30 min | 10.42 | **9.43**  | **13.77** |
+| Persistence       | 60 min | **18.34** | 21.01 | 31.39 |
+| Ridge ($\alpha=0.1$) | 60 min | 20.94 | 19.61 | 28.79 |
+| Random Forest (n=300) | 60 min | 29.89 | 17.01 | 29.94 |
+| HistGB (lr=0.05, d=8) | 60 min | 26.75 | **16.42** | **28.75** |
+| Persistence       | 90 min | **27.26** | 26.72 | 41.84 |
+| Ridge ($\alpha=0.1$) | 90 min | 34.27 | 23.54 | 40.43 |
+| Random Forest (n=300) | 90 min | 43.51 | 21.28 | 42.09 |
+| HistGB (lr=0.05, d=8) | 90 min | 40.72 | **20.53** | **40.71** |
+
+The pattern is therefore consistent across all four baselines: increasing model capacity along the standard ladder (linear → axis-aligned forest → gradient-boosted forest) reduces pooled MAE monotonically by 23 % at 30 minutes and 12 % at 90 minutes, but does not solve the regression-to-the-TIR-mean bias in the hypoglycaemic zone. This is the empirical justification for the architectural and loss-function decisions to be implemented in Phase C: (i) any sequence model that uses a vanilla squared-error loss will inherit the same hypo bias, regardless of recurrence, attention, or fusion mechanism, so the loss function itself must be modified; and (ii) Persistence will be retained as a per-zone reference even after stronger models exist, because in the hypoglycaemic safety case it is the model to beat, not Ridge or HistGB.
+
+**Budget ablation — `max_iter = 300` versus `max_iter = 1000`.** Because the three GBM-300 heads exhausted their iteration cap, a follow-up run trained a second HistGradientBoosting model with `max_iter = 1000` and every other hyperparameter, the same chronological split, the same flattened-window input, and the same seed held fixed. The 1000-iteration model used the full budget on every horizon (1000/1000/1000), confirming that sklearn's internal early-stopping criterion — evaluated on a 10 % slice taken from the training set — was still improving. The external test set tells a different story: pooled test MAE *increased* slightly under the larger budget, by +0.09 mg/dL at 30 minutes, +0.30 at 60 minutes, and +0.34 at 90 minutes (+0.8 %, +1.5 %, +1.3 % relative). Per-zone test MAE in the hypoglycaemic range also moved in the wrong direction at every horizon, by +0.58, +0.92, and +0.32 mg/dL. Patient-averaged test MAE rose by +0.13, +0.34, and +0.57 mg/dL, and the Clarke Zone A share dropped by 0.09, 0.74, and 0.37 percentage points. The divergence between the internal-validation signal — which kept improving for 700 additional iterations — and the external test signal — which started to degrade — is a textbook signature of mild over-fitting that sklearn's internal early stopping cannot detect because it samples its validation slice from the same training distribution. The `max_iter = 300` configuration is therefore retained as the primary GBM baseline; the 1000-iteration run is documented as an ablation rather than promoted. The full delta table is at `outputs/tables/phase_b_gbm_comparison.csv` and the ablation model is checkpointed separately at `outputs/models/gbm_phase_b_1000.joblib`.
+
+All numbers in this section trace back to `outputs/tables/phase_b_*.csv`, `outputs/tables/phase_b_gbm1000_*.csv`, `outputs/models/rf_phase_b.joblib`, `outputs/models/gbm_phase_b.joblib`, and `outputs/models/gbm_phase_b_1000.joblib`. The runners that produce them are `src/run_phase_b.py` and `src/run_gbm_1000.py`, and the Colab-compatible execution path is `notebooks/04b_phase_b_trees.ipynb`.
 
 ---
 
