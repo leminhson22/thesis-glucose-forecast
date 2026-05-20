@@ -406,6 +406,155 @@ def coverage_summary(runs: list[ConformalRun]) -> pd.DataFrame:
 # Convenience for building per-sample interval columns on the master parquet
 # ---------------------------------------------------------------------------
 
+def _quantile_with_finite_correction(
+    residuals_sorted: np.ndarray, alpha: float
+) -> float:
+    """Compute the split-conformal half-width using the finite-sample-corrected
+    empirical quantile from a *pre-sorted* residual array.
+
+    Returns the residual at position ``ceil((n+1)(1-alpha)) - 1`` (0-indexed)
+    after clamping to ``[0, n-1]``. Equivalent to
+    :func:`split_conformal_quantile` for a fixed residual sample but faster
+    when the residual array is sorted once and queried many times.
+    """
+    n = residuals_sorted.size
+    if n == 0:
+        raise ValueError("Empty residual array")
+    alpha = float(np.clip(alpha, 1.0 / (n + 1), 1.0 - 1.0 / (n + 1)))
+    pos = int(np.ceil((n + 1) * (1.0 - alpha))) - 1
+    pos = int(np.clip(pos, 0, n - 1))
+    return float(residuals_sorted[pos])
+
+
+# ---------------------------------------------------------------------------
+# Adaptive Conformal Inference (Gibbs & Candès 2021)
+# ---------------------------------------------------------------------------
+
+def adaptive_conformal_inference(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    cal_residuals_sorted_by_zone: dict[str, np.ndarray],
+    zones: np.ndarray,
+    *,
+    alpha_target: float = 0.10,
+    gamma: float = 0.005,
+    alpha_min: float = 0.005,
+    alpha_max: float = 0.50,
+    return_trajectory: bool = True,
+) -> dict[str, np.ndarray]:
+    """Per-zone Adaptive Conformal Inference along a sequential time-series.
+
+    Implements the Gibbs & Candès 2021 update rule with one independent
+    state variable ``alpha_z`` per glycaemic zone:
+
+        alpha_{t+1, z(t)} = alpha_{t, z(t)} + gamma * (alpha_target - err_t)
+
+    where ``err_t`` is 1 if the realised ``y_true[t]`` lies outside the
+    interval emitted at step ``t``, else 0; only the alpha for the zone of
+    the *current* reference glucose updates at each step. ``alpha_t`` is
+    clipped to the open interval ``(alpha_min, alpha_max)``.
+
+    Parameters
+    ----------
+    y_true, y_pred
+        1-D arrays of equal length giving the realised and point-forecast
+        glucose values in mg/dL, in chronological order.
+    cal_residuals_sorted_by_zone
+        Mapping ``{zone_label: np.ndarray}`` of *pre-sorted* absolute
+        residuals on the calibration (validation) split. One array per
+        zone; the array is queried at any ``alpha_t`` to recover the
+        Split-CP half-width for that zone.
+    zones
+        1-D array of length ``len(y_true)`` giving the glycaemic zone of
+        the reference glucose at each step.
+    alpha_target
+        Long-run target mis-coverage rate. The ACI update drives the
+        empirical miss rate toward this value.
+    gamma
+        Learning rate. Larger ``gamma`` -> faster adaptation but noisier
+        coverage; smaller ``gamma`` -> slower adaptation but more stable
+        intervals. Default 0.005 follows the published recommendation
+        (1/200) for daily-resolution time series; on the 5-minute HUPA
+        grid this corresponds to a window-of-influence of roughly
+        16 hours.
+    alpha_min, alpha_max
+        Safety clipping range for ``alpha_t``.
+    return_trajectory
+        If ``True`` (default), the returned dict additionally contains the
+        per-step ``alpha_t`` trajectory and per-step interval bounds.
+
+    Returns
+    -------
+    result
+        Dict with keys ``empirical_coverage``, ``empirical_coverage_by_zone``,
+        ``mean_width``, ``mean_width_by_zone`` and optionally ``alpha_t``,
+        ``lower``, ``upper``, ``hit``.
+    """
+    y_true = np.asarray(y_true, dtype=float).reshape(-1)
+    y_pred = np.asarray(y_pred, dtype=float).reshape(-1)
+    zones = np.asarray(zones).reshape(-1)
+    n = len(y_true)
+    if not (len(y_pred) == n == len(zones)):
+        raise ValueError("y_true, y_pred, zones must have equal length")
+
+    alpha_by_zone: dict[str, float] = {z: float(alpha_target) for z in cal_residuals_sorted_by_zone}
+
+    alpha_traj = np.full(n, np.nan, dtype=float)
+    lower = np.full(n, np.nan, dtype=float)
+    upper = np.full(n, np.nan, dtype=float)
+    hit = np.zeros(n, dtype=bool)
+
+    for t in range(n):
+        z = str(zones[t])
+        if z not in cal_residuals_sorted_by_zone:
+            continue  # unknown zone — leave NaN
+        a = alpha_by_zone[z]
+        q = _quantile_with_finite_correction(cal_residuals_sorted_by_zone[z], a)
+        lo = y_pred[t] - q
+        up = y_pred[t] + q
+        covered = (y_true[t] >= lo) & (y_true[t] <= up)
+        err = 0.0 if covered else 1.0
+        alpha_traj[t] = a
+        lower[t] = lo
+        upper[t] = up
+        hit[t] = bool(covered)
+        # Update rule (only the alpha for the current zone changes)
+        a_new = a + gamma * (alpha_target - err)
+        alpha_by_zone[z] = float(np.clip(a_new, alpha_min, alpha_max))
+
+    valid = ~np.isnan(alpha_traj)
+    out: dict[str, np.ndarray | float | dict] = {}
+    out["empirical_coverage"] = float(hit[valid].mean()) if valid.any() else float("nan")
+    out["mean_width"] = float((upper[valid] - lower[valid]).mean()) if valid.any() else float("nan")
+    cov_zone: dict[str, float] = {}
+    width_zone: dict[str, float] = {}
+    n_zone: dict[str, int] = {}
+    final_alpha: dict[str, float] = {}
+    for z in cal_residuals_sorted_by_zone:
+        mask = (zones == z) & valid
+        if mask.any():
+            cov_zone[z] = float(hit[mask].mean())
+            width_zone[z] = float((upper[mask] - lower[mask]).mean())
+            n_zone[z] = int(mask.sum())
+            final_alpha[z] = float(alpha_by_zone[z])
+        else:
+            cov_zone[z] = float("nan")
+            width_zone[z] = float("nan")
+            n_zone[z] = 0
+            final_alpha[z] = float(alpha_by_zone[z])
+    out["empirical_coverage_by_zone"] = cov_zone
+    out["mean_width_by_zone"] = width_zone
+    out["n_by_zone"] = n_zone
+    out["final_alpha_by_zone"] = final_alpha
+
+    if return_trajectory:
+        out["alpha_t"] = alpha_traj
+        out["lower"] = lower
+        out["upper"] = upper
+        out["hit"] = hit
+    return out
+
+
 def attach_intervals_to_predictions(
     df_predictions: pd.DataFrame,
     runs: list[ConformalRun],
