@@ -6,7 +6,7 @@ description: >
   Approach for Short-Term Blood Glucose Forecasting in Type 1 Diabetes". Governs
   the full research pipeline: dataset understanding, meaningful EDA, preprocessing,
   feature engineering, hybrid deep learning model design, baseline comparison,
-  fine-tuning, XAI, application development, Google Colab compatibility, and
+  fine-tuning, uncertainty quantification, XAI, application development, Google Colab compatibility, and
   academic report writing in scientific style.
 domain: medical-ai
 language: python
@@ -317,6 +317,16 @@ Candidate architectures (select based on data evidence):
 - CNN-GRU-Attention with static patient embedding
 - Multimodal fusion model (if multiple reliable modalities available)
 
+**Required additional candidate after Step 6 if accuracy is weak:** Train a **plain CNN-GRU model** inspired by the CNN-LSTM glucose-forecasting paper the user provided (stacks of convolutional layers plus recurrent units for 30-, 60-, and 90-minute BG prediction from historical glucose, meal, and insulin inputs). This model is not the same as the current Step 6 static-attention hybrid. It should be used as a controlled architecture ablation to test whether a simpler convolutional-recurrent stack improves MAE/RMSE before adding attention or complex fusion.
+
+Implementation guidance for the CNN-GRU candidate:
+- Use the same leakage-safe HUPA split, same 17 dynamic + 16 static feature set, same targets, and same evaluation tables as the existing Step 5/6 models.
+- Start with a sequential stack: `Conv1D -> activation -> dropout/batchnorm optional -> Conv1D -> GRU -> dense multi-horizon head`.
+- Prefer **GRU** over LSTM for the first run because the project already found GRU comparable to LSTM at lower parameter cost; optionally run CNN-LSTM as a secondary paper-faithful variant if compute allows.
+- Compare at minimum against HistGB-300, `gru_c2_zwh30a`, and current `step6_hybrid` on pooled MAE/RMSE, patient-averaged MAE/RMSE, per-zone MAE/RMSE, and CG-EGA.
+- Tune only a small defensible grid first: convolution channels, kernel sizes, GRU hidden size, dropout, learning rate, and lookback length (`24` vs `36` steps). Do not run uncontrolled random experiments.
+- If CNN-GRU improves pooled 30-minute accuracy without worsening hypo/hyper or CG-EGA erroneous rate, promote it as the preferred neural architecture; if it only improves pooled metrics while worsening dangerous zones, report it as an accuracy/safety trade-off rather than a final model.
+
 **Design principle:** Recommend the simplest architecture that works well first, then extend if justified. Complexity must earn its place.
 
 ### 5.2.b Stacked Hybrid Ensemble Modeling (Advanced Candidate)
@@ -374,23 +384,32 @@ Report all metrics per model, per forecasting horizon, and per patient where fea
 | RMSE | Overall error magnitude |
 | MAE | Robust average error |
 | MAPE | Relative error (only if safe for glucose scale) |
-| Clarke Error Grid Analysis (EGA) | Clinical safety classification — mandatory |
-| Parkes (Consensus) Error Grid | Alternative clinical grid if applicable |
+| Continuous Glucose Error Grid Analysis (CG-EGA) | Primary clinical safety classification for CGM forecasting — mandatory |
+| Clarke Error Grid Analysis (EGA) | Legacy point-glucose grid — optional secondary comparison only |
+| Parkes (Consensus) Error Grid | Alternative clinical grid if explicitly needed for comparison |
 | Time-in-Range prediction accuracy | Classification into glycemic zones |
 | Error by glycemic zone | Does model underperform in hypoglycemia range? |
 | Error by patient | Is performance consistent across subjects? |
 | Error by horizon | How does error grow with prediction distance? |
 
-At minimum, every completed model must report **MSE, RMSE, and MAE** on the same held-out split, in the target's real clinical unit whenever possible. For HUPA-UCM, compute and report MSE/RMSE/MAE after inverse-scaling predictions to **mg/dL** if any target scaling was used during training. R2 may be included as a secondary, unitless explained-variance statistic, but it must not replace error magnitudes or clinical-zone analysis.
+At minimum, every completed model must report **MSE, RMSE, MAE, and CG-EGA** on the same held-out split, in the target's real clinical unit whenever possible. For HUPA-UCM, compute and report MSE/RMSE/MAE after inverse-scaling predictions to **mg/dL** if any target scaling was used during training. R2 may be included as a secondary, unitless explained-variance statistic, but it must not replace error magnitudes or clinical-zone analysis.
+
+For CGM forecasting, **CG-EGA replaces Clarke EGA as the primary clinical error-grid method**. CG-EGA must evaluate both:
+- **Point accuracy**: whether predicted glucose values are clinically acceptable relative to the reference glucose.
+- **Rate/trend accuracy**: whether the predicted glucose direction and rate of change are clinically acceptable.
+
+Report CG-EGA as the percentage of predictions classified as **accurate**, **benign error**, and **erroneous**, per model, split, horizon, and glycaemic zone where feasible. If the implementation also exposes point-EGA and rate-EGA subcomponents, save and discuss both. Clarke EGA may be retained only as a backward-compatible appendix or transitional comparison for already-produced Step 5 artefacts; do not use Clarke EGA as the main clinical-safety claim for final CGM forecasting results.
 
 If the hybrid model does not outperform all baselines, analyze the reasons honestly and suggest concrete improvements. Do not manipulate results.
 
 ### 5.6 Required Post-Training Comparison Artefacts
 After all baseline and neural models for a phase are trained, produce comparison artefacts before writing conclusions:
 
-- A master metric table with one row per `(model, split, horizon)` and columns for `MSE`, `RMSE`, `MAE`, optional `R2`, patient-averaged metrics, and Clarke EGA zone percentages.
+- A master metric table with one row per `(model, split, horizon)` and columns for `MSE`, `RMSE`, `MAE`, optional `R2`, patient-averaged metrics, and CG-EGA percentages (`accurate`, `benign_error`, `erroneous`). If Clarke EGA is still computed for continuity, keep it in separate `legacy_clarke_*` columns or a separate appendix table.
+- A CG-EGA detail table with point accuracy, rate/trend accuracy, and final CG-EGA class per model, split, horizon, patient, and glycaemic zone where feasible.
 - A per-zone error table for hypo / TIR / hyper at each horizon, with hypoglycaemia results highlighted in the written interpretation.
 - A prediction-vs-actual table containing `participant_id`, timestamp or window index, split, horizon, `y_true`, `y_pred`, absolute error, squared error, glycaemic zone, and model name.
+- For CG-EGA, the prediction-vs-actual table must also include the reference and predicted glucose rate-of-change/trend category needed for rate-error-grid classification.
 - Prediction-vs-actual scatter plots for each horizon, with the identity line `y = x` and consistent axes in mg/dL.
 - Time-series overlay figures for representative patients or windows, showing actual glucose and model forecasts at 30/60/90 minutes.
 - Residual/error-distribution plots by horizon and glycaemic zone to expose systematic bias, especially under-prediction or over-prediction in hypoglycaemia.
@@ -423,34 +442,63 @@ Ablation results provide strong scientific support for architectural choices and
 
 ---
 
-## 7. Step 7 — Explainable AI (XAI)
+## 7. Uncertainty Quantification (UQ) — After Final Model Selection
+
+Implement uncertainty quantification **after the final or top candidate model has been selected by validation/test evaluation**, and before final XAI/app work. Do not spend UQ effort on temporary models that are likely to be discarded.
+
+Provide prediction intervals rather than only point estimates:
+
+Methods:
+- **Monte Carlo Dropout:** Apply dropout at inference time across N forward passes; compute mean and standard deviation.
+- **Conformal Prediction:** Distribution-free coverage guarantee without retraining.
+- **Deep Ensemble:** Train 3–5 models with different seeds; use prediction spread as uncertainty.
+- **Quantile Regression:** Train the model to predict lower/median/upper quantiles (e.g., 5th/50th/95th percentiles) using pinball loss.
+- **Evidential Regression:** Predict distribution parameters directly; use only if the loss and calibration diagnostics are understood.
+
+Required uncertainty outputs:
+- Point forecast for 30, 60, and 90 minutes.
+- Prediction interval for each horizon, preferably 80% and 90%.
+- Calibration metrics: empirical coverage, interval width/sharpness, and coverage by glycaemic zone.
+- Failure analysis: under-coverage in hypoglycaemia, hyperglycaemia, censored glucose windows, and missing-modality patients.
+- Variance-convergence figure showing whether predictive variance stabilizes as MC-dropout samples, ensemble members, or calibration size increase.
+
+Implementation guidance:
+- Start with MC Dropout because it is easiest to integrate with the neural model.
+- Add conformal prediction as the most defensible interval wrapper if a chronological calibration split is available.
+- Use Deep Ensembles or stacked-ensemble uncertainty only if compute allows.
+- Do not report uncertainty as meaningful unless coverage is evaluated on a held-out test set.
+- Avoid false reassurance: wide intervals, under-coverage, and poorly calibrated uncertainty must be reported honestly.
+
+---
+
+## 8. Explainable AI (XAI) — After UQ
 
 Implement at least two complementary XAI methods. XAI must be connected to the research question: which features and time steps drive glucose predictions, and does the model's behavior align with clinical knowledge?
 
-### 7.1 SHAP (SHapley Additive Explanations)
+### 8.1 SHAP (SHapley Additive Explanations)
 - Use `shap.DeepExplainer` or `shap.GradientExplainer` for neural network components.
 - Use `shap.TreeExplainer` for tree-based baselines.
 - Generate: SHAP summary plot (global importance), SHAP force plots (individual predictions), temporal importance heatmaps.
 - Focus case studies on hypoglycemia predictions — these are clinically most critical.
 
-### 7.2 Attention Weight Visualization (If Attention Is in Architecture)
+### 8.2 Attention Weight Visualization (If Attention Is in Architecture)
 - Extract attention weights from the temporal encoder and visualize them over the input sequence.
 - Verify that high-attention timesteps correspond to physiologically meaningful moments (e.g., post-meal glucose rise, insulin action onset).
 - Acknowledge attention's limitations as an explanation mechanism.
 
-### 7.3 Gradient-Based Methods
+### 8.3 Gradient-Based Methods
 - Apply **Integrated Gradients** for neural network feature attribution.
 - Apply **GradCAM** for 1D-CNN components if present.
 
-### 7.4 Permutation Feature Importance
+### 8.4 Permutation Feature Importance
 - Measure drop in validation RMSE when each feature group is randomly shuffled.
 - Use this as a model-agnostic cross-check of SHAP results.
 
-### 7.5 Modality Ablation (as XAI Evidence)
+### 8.5 Modality Ablation (as XAI Evidence)
 - Systematically remove each modality and retrain to quantify its contribution to prediction accuracy.
 - This is both an engineering experiment and an explanation tool.
 
-### 7.6 XAI Reporting Requirements
+### 8.6 XAI Reporting Requirements
 - Do not merely present plots. Write an analytical interpretation for each XAI result.
 - Connect findings to clinical knowledge: does the model rely on recent glucose history (expected)? Does it respond to post-meal patterns (expected)?
 - Critically assess failures: where does the model misattribute importance?
@@ -458,7 +506,7 @@ Implement at least two complementary XAI methods. XAI must be connected to the r
 
 ---
 
-## 8. Step 8 — Extended Contributions
+## 9. Extended Contributions — After UQ and XAI
 
 After the core modeling pipeline is validated, select and implement additional contributions to increase research impact. Evaluate feasibility before committing.
 
@@ -470,8 +518,8 @@ Given: model's numerical forecast + SHAP-derived feature importance + current gl
 - Include a mandatory disclaimer in all LLM-generated outputs.
 - Document prompt engineering choices.
 
-### Option B: Uncertainty Quantification (Recommended)
-Provide prediction intervals rather than point estimates.
+### Option B: Advanced Uncertainty Quantification (Recommended if Step 7 needs extension)
+Core uncertainty quantification belongs in Step 7 and should be completed before final XAI/app work. Use this option only to extend the basic UQ implementation with stronger methods such as conformal wrappers, deep ensembles, quantile regression, evidential regression, or stacked-ensemble uncertainty.
 
 Methods:
 - **Monte Carlo Dropout:** Apply dropout at inference time across N forward passes; compute mean and standard deviation.
@@ -553,7 +601,7 @@ Wrap the trained model in a FastAPI service:
 
 ---
 
-## 9. Google Colab Compatibility
+## 10. Google Colab Compatibility
 
 All code must run on both local machines and Google Colab without modification or errors.
 
@@ -589,7 +637,7 @@ All code must run on both local machines and Google Colab without modification o
 
 ---
 
-## 10. Code Organization
+## 11. Code Organization
 
 ```
 project-root/
@@ -640,7 +688,7 @@ project-root/
 
 ---
 
-## 11. Report Format (`report.md`)
+## 12. Report Format (`report.md`)
 
 The `report.md` must be written in **formal academic English** (or formal academic Vietnamese if requested). It must read as a coherent research document, not a collection of bullet points. Each section must contain complete paragraphs that explain what was done, why it was done, how it supports the research goal, and what limitations apply.
 
@@ -650,7 +698,7 @@ The `report.md` must be written in **formal academic English** (or formal academ
 
 **1. Introduction:** Clinical motivation for blood glucose forecasting in T1D. Limitations of existing approaches. Research gap. Thesis contributions and structure overview.
 
-**2. Background and Related Work:** Key literature on CGM-based glucose forecasting, deep learning for time series, multimodal models in diabetes, XAI in healthcare, and clinical evaluation frameworks (Clarke EGA, Parkes EGA).
+**2. Background and Related Work:** Key literature on CGM-based glucose forecasting, deep learning for time series, multimodal models in diabetes, XAI in healthcare, and clinical evaluation frameworks, with **CG-EGA as the primary CGM-specific error-grid method**. Clarke/Parkes EGA may be mentioned only as older point-glucose grids or secondary comparators.
 
 **3. Dataset Description:** Dataset name, source, collection protocol, CGM device, subjects, time span, sampling frequency, available modalities, and known limitations or biases.
 
@@ -662,25 +710,27 @@ The `report.md` must be written in **formal academic English** (or formal academ
 
 **7. Modeling Strategy:** Architecture of all baselines, the proposed hybrid model, and any stacked hybrid ensemble if implemented. Training protocol, loss function rationale, uncertainty approach, hyperparameter tuning approach, and architectural diagrams if possible.
 
-**8. Experimental Results and Evaluation:** Performance tables per model, per horizon, per metric. Comparative analysis. Clarke EGA discussion. Patient-level and horizon-level analysis. Honest assessment of where the hybrid model succeeds and where it does not.
+**8. Experimental Results and Evaluation:** Performance tables per model, per horizon, per metric. Comparative analysis. CG-EGA discussion including accurate / benign-error / erroneous prediction percentages and trend-error interpretation. Patient-level and horizon-level analysis. Honest assessment of where the hybrid model succeeds and where it does not.
 
-**9. Explainability Analysis:** XAI method descriptions. Interpretation of SHAP, attention, and gradient findings. Connection to clinical domain knowledge. Critical assessment of explanation quality and limitations.
+**9. Uncertainty Quantification:** Prediction interval method, calibration/coverage metrics, interval width/sharpness, variance-convergence figure, and failure analysis by horizon, glycaemic zone, censored windows, and missing-modality patients.
 
-**10. Extended Contributions:** Description and critical evaluation of uncertainty quantification, stacked hybrid ensembling, LLM integration, web application, REST API, and/or mobile/wearable-connected research prototype — whichever was implemented.
+**10. Explainability Analysis:** XAI method descriptions. Interpretation of SHAP, attention, and gradient findings. Connection to clinical domain knowledge. Critical assessment of explanation quality and limitations.
 
-**11. Discussion:** Synthesis of findings. What do the results imply for the research question? How do they compare to related work?
+**11. Extended Contributions:** Description and critical evaluation of stacked hybrid ensembling, LLM integration, web application, REST API, and/or mobile/wearable-connected research prototype — whichever was implemented.
 
-**12. Limitations:** Honest, specific discussion of data limitations, architectural assumptions, evaluation scope, and clinical applicability constraints.
+**12. Discussion:** Synthesis of findings. What do the results imply for the research question? How do they compare to related work?
 
-**13. Future Work:** Concrete, actionable directions for extending this research.
+**13. Limitations:** Honest, specific discussion of data limitations, architectural assumptions, evaluation scope, and clinical applicability constraints.
 
-**14. Conclusion:** Summary of contributions and key findings.
+**14. Future Work:** Concrete, actionable directions for extending this research.
 
-**15. References:** All cited papers, datasets, and tools in consistent format (APA or IEEE).
+**15. Conclusion:** Summary of contributions and key findings.
+
+**16. References:** All cited papers, datasets, and tools in consistent format (APA or IEEE).
 
 ---
 
-## 12. Mandatory Prohibited Actions
+## 13. Mandatory Prohibited Actions
 
 The assistant must never do any of the following:
 
@@ -702,7 +752,7 @@ The assistant must never do any of the following:
 
 ---
 
-## 13. Decision-Making and Reasoning Style
+## 14. Decision-Making and Reasoning Style
 
 When the assistant must make a methodological decision, select the best option based on this priority order:
 
@@ -719,7 +769,7 @@ When multiple options are viable, compare them explicitly and recommend the most
 
 ---
 
-## 14. Required Workflow Order (Do Not Skip or Reorder)
+## 15. Required Workflow Order (Do Not Skip or Reorder)
 
 ```
 Step 0  → Systematic literature review & research synthesis ⭐ LÀM ĐẦU TIÊN
@@ -742,11 +792,12 @@ Step 5  → Baseline model implementation and evaluation
 Step 6  → Hybrid model design, training, and evaluation
 Step 7  → Comparative analysis: hybrid vs. all baselines
 Step 8  → Fine-tuning and ablation studies
-Step 9  → XAI integration and analysis
-Step 10 → Extended contributions: at minimum Options B + D; consider stacked hybrid ensemble if base models are complementary
-Step 11 → Final report.md consolidation (all sections complete)
-Step 12 → Colab notebook cleanup and full end-to-end test on fresh runtime
-Step 13 → Application deployment (if Option D/D2 chosen): web demo first, then optional mobile/wearable-connected research prototype
+Step 9  → Uncertainty Quantification for the final/top model before XAI/app work
+Step 10 → XAI integration and analysis for the final/top model
+Step 11 → Extended contributions: at minimum app/demo Option D; consider stacked hybrid ensemble if base models are complementary
+Step 12 → Final report.md consolidation (all sections complete)
+Step 13 → Colab notebook cleanup and full end-to-end test on fresh runtime
+Step 14 → Application deployment (if Option D/D2 chosen): web demo first, then optional mobile/wearable-connected research prototype
 ```
 
 **Modeling must not begin before EDA is complete and preprocessing decisions are justified.
