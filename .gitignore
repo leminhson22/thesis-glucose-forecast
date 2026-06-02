@@ -37,10 +37,21 @@ reports/
 *.docx
 *.pdf
 *.tmp
+*.bak
+*.bak*
 ~$*
 ~WRL*.tmp
+CLAUDE.md
+MEMORY.md
+project_context.md
+anti_AI.md
+KT.NC.SV_*.md
+KT.NC.SV.25_43.md
+hybrid_CNN_GRU.txt
 
 # App/deployment scratch
+app.py
+app/
 .hf_space_deploy_*/
 .streamlit/
 
@@ -52,6 +63,30 @@ Thumbs.db
 .claude/
 skills/
 references/
+
+# Non-core local data/notebook/script material retained only on this machine.
+data/READMY.md
+data/data_hupa/
+data/processed/hupa_5min_trajectory_y.npy
+notebooks/*.ipynb
+outputs/figures/
+outputs/*.txt
+src/_build_*.py
+src/_clean_citations_apa.py
+src/build_*.py
+src/eval_step6_v3_seq2seq.py
+src/generate_*.py
+src/hupa_*.py
+src/insert_prediction_sigma_figure.py
+src/make_*.py
+src/plot_*.py
+src/render_*.py
+src/run_gbm_1000.py
+src/run_main_hybrid.py
+src/run_step6_v3_seq2seq.py
+src/run_step7_stacked.py
+src/uom_to_hupa_feasibility.py
+src/verify_hupa.py
 
 # Core artefacts intentionally kept in this repository for Colab reproduction.
 !data/processed/
