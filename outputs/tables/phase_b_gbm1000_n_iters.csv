@@ -1,0 +1,4 @@
+horizon_min,horizon_idx,n_iters_used,max_iter_cap,early_stopped
+30,0,1000,1000,0
+60,1,1000,1000,0
+90,2,1000,1000,0

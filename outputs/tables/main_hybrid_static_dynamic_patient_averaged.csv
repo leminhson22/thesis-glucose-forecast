@@ -1,0 +1,13 @@
+model,split,horizon_min,metric,patient_avg,patient_sd,n_patients
+main_hybrid_static_dynamic,val,30,mae,17.46131362915039,4.5705410556537425,25
+main_hybrid_static_dynamic,val,30,rmse,22.521518745422362,5.454595393371042,25
+main_hybrid_static_dynamic,val,60,mae,24.671813888549806,7.107368142016259,25
+main_hybrid_static_dynamic,val,60,rmse,32.01208442687988,8.777710229080766,25
+main_hybrid_static_dynamic,val,90,mae,31.332578506469726,9.75437794895833,25
+main_hybrid_static_dynamic,val,90,rmse,40.51001846313476,12.059181083205011,25
+main_hybrid_static_dynamic,test,30,mae,18.15480339050293,6.592529553449341,25
+main_hybrid_static_dynamic,test,30,rmse,23.328008613586427,7.5571520811937445,25
+main_hybrid_static_dynamic,test,60,mae,25.0838981628418,7.831590877693359,25
+main_hybrid_static_dynamic,test,60,rmse,32.91102210998535,9.303194522427738,25
+main_hybrid_static_dynamic,test,90,mae,31.815673446655275,9.579298775027228,25
+main_hybrid_static_dynamic,test,90,rmse,41.63484367370606,11.529733863547014,25

@@ -18,7 +18,7 @@ from typing import Sequence
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 try:
     from . import config as C
@@ -158,6 +158,7 @@ def build_dataloaders(
     batch_size: int = 128,
     num_workers: int = 0,
     train_modality_dropout_p: float = 0.0,
+    train_sample_weights: np.ndarray | None = None,
     seed: int = C.SEED,
     pin_memory: bool = False,
 ) -> dict[str, DataLoader]:
@@ -181,13 +182,32 @@ def build_dataloaders(
             modality_dropout_p=train_modality_dropout_p if name == "train" else 0.0,
             rng=rng,
         )
+        sampler = None
+        shuffle = name == "train"
+        if name == "train" and train_sample_weights is not None:
+            weights = np.asarray(train_sample_weights, dtype=np.float64)
+            if weights.shape[0] != len(ds):
+                raise ValueError(
+                    "train_sample_weights length mismatch: "
+                    f"weights={weights.shape[0]}, train_samples={len(ds)}"
+                )
+            if np.any(~np.isfinite(weights)) or np.any(weights <= 0):
+                raise ValueError("train_sample_weights must be finite and positive")
+            sampler = WeightedRandomSampler(
+                weights=torch.as_tensor(weights, dtype=torch.double),
+                num_samples=len(ds),
+                replacement=True,
+                generator=shuffle_gen,
+            )
+            shuffle = False
         loaders[name] = DataLoader(
             ds,
             batch_size=batch_size,
-            shuffle=(name == "train"),
+            shuffle=shuffle,
+            sampler=sampler,
             num_workers=int(num_workers),
             pin_memory=pin_memory,
             drop_last=False,
-            generator=shuffle_gen if name == "train" else None,
+            generator=shuffle_gen if (name == "train" and sampler is None) else None,
         )
     return loaders

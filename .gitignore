@@ -12,7 +12,7 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data
+# Data: ignore raw/intermediate by default.
 data/raw/
 data/interim/
 data/processed/
@@ -32,9 +32,40 @@ models/
 logs/
 *.log
 
+# Reports, drafts, generated documents
+reports/
+*.docx
+*.pdf
+*.tmp
+~$*
+~WRL*.tmp
+
+# App/deployment scratch
+.hf_space_deploy_*/
+.streamlit/
+
 # IDE / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-.claude/settings.local.json
+.claude/
+skills/
+references/
+
+# Core artefacts intentionally kept in this repository for Colab reproduction.
+!data/processed/
+!data/processed/hupa_5min_sequences.npz
+!data/processed/hupa_5min_timestep.parquet
+!data/processed/hupa_static_features.csv
+
+!outputs/
+!outputs/models/
+!outputs/models/scalers.json
+!outputs/models/step6_hybrid_v2_pers_resid.pt
+!outputs/tables/
+!outputs/tables/*.csv
+!outputs/tables/*.md
+
+!notebooks/
+!notebooks/00_colab_quickstart.ipynb

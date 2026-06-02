@@ -1,0 +1,13 @@
+model,split,horizon_min,metric,value,n_samples
+step6_hybrid_v2_smaller,val,30,mae,14.264588356018066,45382
+step6_hybrid_v2_smaller,val,30,rmse,19.628393173217773,45382
+step6_hybrid_v2_smaller,val,60,mae,20.618471145629883,45382
+step6_hybrid_v2_smaller,val,60,rmse,28.815250396728516,45382
+step6_hybrid_v2_smaller,val,90,mae,26.98335838317871,45382
+step6_hybrid_v2_smaller,val,90,rmse,37.54600524902344,45382
+step6_hybrid_v2_smaller,test,30,mae,14.069842338562012,45395
+step6_hybrid_v2_smaller,test,30,rmse,19.32524871826172,45395
+step6_hybrid_v2_smaller,test,60,mae,20.308414459228516,45395
+step6_hybrid_v2_smaller,test,60,rmse,28.30853843688965,45395
+step6_hybrid_v2_smaller,test,90,mae,26.33962631225586,45395
+step6_hybrid_v2_smaller,test,90,rmse,36.57767105102539,45395

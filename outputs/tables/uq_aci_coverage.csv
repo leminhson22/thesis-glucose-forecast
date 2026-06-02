@@ -1,0 +1,13 @@
+model,horizon_min,zone,n,coverage_pct,mean_width,final_alpha,alpha_target,gamma
+step6_v2_pers_resid,30,all,45395,89.95,48.41,,0.1,0.005
+step6_v2_pers_resid,30,hypo,3631,89.56,34.24,0.0205,0.1,0.005
+step6_v2_pers_resid,30,tir,32470,90.0,46.27,0.105,0.1,0.005
+step6_v2_pers_resid,30,hyper,9294,89.91,61.43,0.057,0.1,0.005
+step6_v2_pers_resid,60,all,45395,89.93,88.09,,0.1,0.005
+step6_v2_pers_resid,60,hypo,3629,89.56,74.71,0.0195,0.1,0.005
+step6_v2_pers_resid,60,tir,32479,89.97,79.33,0.107,0.1,0.005
+step6_v2_pers_resid,60,hyper,9287,89.92,123.95,0.0635,0.1,0.005
+step6_v2_pers_resid,90,all,45395,89.9,115.25,,0.1,0.005
+step6_v2_pers_resid,90,hypo,3625,89.57,122.08,0.0225,0.1,0.005
+step6_v2_pers_resid,90,tir,32493,89.93,98.75,0.111,0.1,0.005
+step6_v2_pers_resid,90,hyper,9277,89.93,170.41,0.0695,0.1,0.005

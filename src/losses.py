@@ -173,6 +173,115 @@ class ZoneWeightedMSE(nn.Module):
         )
 
 
+class ClinicalZoneRateLoss(ZoneWeightedMSE):
+    """Zone-weighted loss with threshold-crossing and direction penalties.
+
+    The base term is :class:`ZoneWeightedMSE`. Two clinical terms are added:
+
+    * missed hypo/hyper penalties when the target is outside the safe range
+      but the prediction remains inside it;
+    * a direction penalty when the true future glucose changes materially
+      from the current glucose but the predicted delta points the other way
+      or stays too flat.
+
+    The direction term needs the current glucose in mg/dL. For the
+    persistence-residual model this is reconstructed from the last dynamic
+    glucose z-score and the pid-index column appended to ``x_static``.
+    """
+
+    def __init__(
+        self,
+        *args,
+        missed_hypo_penalty: float = 0.8,
+        missed_hyper_penalty: float = 0.25,
+        threshold_margin: float = 5.0,
+        direction_penalty: float = 0.08,
+        direction_delta_threshold: float = 10.0,
+        direction_margin: float = 2.0,
+        pid_glucose_mean: torch.Tensor | None = None,
+        pid_glucose_std: torch.Tensor | None = None,
+        glucose_dyn_idx: int = 0,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        if missed_hypo_penalty < 0 or missed_hyper_penalty < 0:
+            raise ValueError("missed-zone penalties must be non-negative")
+        if threshold_margin < 0:
+            raise ValueError("threshold_margin must be non-negative")
+        if direction_penalty < 0:
+            raise ValueError("direction_penalty must be non-negative")
+        if direction_delta_threshold < 0:
+            raise ValueError("direction_delta_threshold must be non-negative")
+        self.missed_hypo_penalty = float(missed_hypo_penalty)
+        self.missed_hyper_penalty = float(missed_hyper_penalty)
+        self.threshold_margin = float(threshold_margin)
+        self.direction_penalty = float(direction_penalty)
+        self.direction_delta_threshold = float(direction_delta_threshold)
+        self.direction_margin = float(direction_margin)
+        self.glucose_dyn_idx = int(glucose_dyn_idx)
+        mean = None if pid_glucose_mean is None else torch.as_tensor(pid_glucose_mean, dtype=torch.float32)
+        std = None if pid_glucose_std is None else torch.as_tensor(pid_glucose_std, dtype=torch.float32)
+        self.register_buffer("pid_glucose_mean", mean, persistent=False)
+        self.register_buffer("pid_glucose_std", std, persistent=False)
+
+    @staticmethod
+    def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        mask_f = mask.to(dtype=values.dtype)
+        return (values * mask_f).sum() / mask_f.sum().clamp_min(1.0)
+
+    def _last_glucose_mgdl(self, x_dyn: torch.Tensor, x_stat: torch.Tensor) -> torch.Tensor | None:
+        if self.pid_glucose_mean is None or self.pid_glucose_std is None:
+            return None
+        pid_idx = x_stat[:, -1].long().clamp(min=0, max=self.pid_glucose_mean.numel() - 1)
+        mean = self.pid_glucose_mean.to(device=x_dyn.device, dtype=x_dyn.dtype)[pid_idx]
+        std = self.pid_glucose_std.to(device=x_dyn.device, dtype=x_dyn.dtype)[pid_idx]
+        last_z = x_dyn[:, -1, self.glucose_dyn_idx]
+        return last_z * std + mean
+
+    def forward(
+        self,
+        y_pred: torch.Tensor,
+        y_true: torch.Tensor,
+        x_dyn: torch.Tensor | None = None,
+        x_stat: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        base = super().forward(y_pred, y_true)
+        aux = torch.zeros((), device=y_true.device, dtype=y_true.dtype)
+
+        if self.missed_hypo_penalty > 0:
+            missed_hypo = (y_true < self.hypo_thr) & (y_pred >= self.hypo_thr)
+            hypo_cost = torch.relu(y_pred - self.hypo_thr + self.threshold_margin) ** 2
+            aux = aux + self.missed_hypo_penalty * self._masked_mean(hypo_cost, missed_hypo)
+
+        if self.missed_hyper_penalty > 0:
+            missed_hyper = (y_true > self.hyper_thr) & (y_pred <= self.hyper_thr)
+            hyper_cost = torch.relu(self.hyper_thr - y_pred + self.threshold_margin) ** 2
+            aux = aux + self.missed_hyper_penalty * self._masked_mean(hyper_cost, missed_hyper)
+
+        if self.direction_penalty > 0 and x_dyn is not None and x_stat is not None:
+            last_glucose = self._last_glucose_mgdl(x_dyn, x_stat)
+            if last_glucose is not None:
+                true_delta = y_true - last_glucose.unsqueeze(1)
+                pred_delta = y_pred - last_glucose.unsqueeze(1)
+                meaningful = true_delta.abs() >= self.direction_delta_threshold
+                signed_pred = pred_delta * true_delta.sign()
+                direction_cost = torch.relu(self.direction_margin - signed_pred) ** 2
+                zone_boost = torch.ones_like(y_true)
+                zone_boost = torch.where(y_true < self.hypo_thr, zone_boost * 2.0, zone_boost)
+                zone_boost = torch.where(y_true > self.hyper_thr, zone_boost * 1.25, zone_boost)
+                aux = aux + self.direction_penalty * self._masked_mean(direction_cost * zone_boost, meaningful)
+
+        return base + aux
+
+    def extra_repr(self) -> str:
+        return (
+            super().extra_repr()
+            + f", missed_hypo_penalty={self.missed_hypo_penalty}, "
+            + f"missed_hyper_penalty={self.missed_hyper_penalty}, "
+            + f"direction_penalty={self.direction_penalty}"
+        )
+
+
 def per_horizon_mae(y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
     """Diagnostic helper: ``(n_horizons,)`` MAE for in-training logging."""
     return (y_pred - y_true).abs().mean(dim=0)

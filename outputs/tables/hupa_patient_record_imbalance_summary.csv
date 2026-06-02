@@ -1,0 +1,5 @@
+﻿rank,participant_id,n_rows,duration_days,record_share_pct,cumulative_share_pct
+1,HUPA0027P,165306,574.0,53.43,53.43
+2,HUPA0026P,40605,141.0,13.12,66.55
+3,HUPA0028P,25902,89.9,8.37,74.93
+4-25,Remaining 22 patients,77579,,25.07,100.0
