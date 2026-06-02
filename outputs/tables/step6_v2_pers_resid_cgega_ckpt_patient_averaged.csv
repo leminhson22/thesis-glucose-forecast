@@ -1,0 +1,13 @@
+model,split,horizon_min,metric,patient_avg,patient_sd,n_patients
+step6_v2_pers_resid_cgega_ckpt,val,30,mae,11.949025745391845,3.4993699488138517,25
+step6_v2_pers_resid_cgega_ckpt,val,30,rmse,17.129268722534178,4.931779013717434,25
+step6_v2_pers_resid_cgega_ckpt,val,60,mae,22.34800203323364,6.994136244241155,25
+step6_v2_pers_resid_cgega_ckpt,val,60,rmse,30.832379608154298,8.923272750300676,25
+step6_v2_pers_resid_cgega_ckpt,val,90,mae,30.24519739151001,9.361404654765336,25
+step6_v2_pers_resid_cgega_ckpt,val,90,rmse,40.59748100280762,11.832145250136346,25
+step6_v2_pers_resid_cgega_ckpt,test,30,mae,12.257515735626221,3.211982905155948,25
+step6_v2_pers_resid_cgega_ckpt,test,30,rmse,17.141694622039793,4.491475875989472,25
+step6_v2_pers_resid_cgega_ckpt,test,60,mae,22.8473663520813,6.312640562109773,25
+step6_v2_pers_resid_cgega_ckpt,test,60,rmse,31.380531196594237,8.407751520524176,25
+step6_v2_pers_resid_cgega_ckpt,test,90,mae,31.11687801361084,8.537464556994987,25
+step6_v2_pers_resid_cgega_ckpt,test,90,rmse,41.789763641357425,11.13651132782722,25

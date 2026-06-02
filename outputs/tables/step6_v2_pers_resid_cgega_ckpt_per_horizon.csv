@@ -1,0 +1,13 @@
+model,split,horizon_min,metric,value,n_samples
+step6_v2_pers_resid_cgega_ckpt,val,30,mae,10.725341796875,45382
+step6_v2_pers_resid_cgega_ckpt,val,30,rmse,15.74461555480957,45382
+step6_v2_pers_resid_cgega_ckpt,val,60,mae,19.588308334350586,45382
+step6_v2_pers_resid_cgega_ckpt,val,60,rmse,28.201698303222656,45382
+step6_v2_pers_resid_cgega_ckpt,val,90,mae,26.355669021606445,45382
+step6_v2_pers_resid_cgega_ckpt,val,90,rmse,37.0412712097168,45382
+step6_v2_pers_resid_cgega_ckpt,test,30,mae,10.95773983001709,45395
+step6_v2_pers_resid_cgega_ckpt,test,30,rmse,15.653162956237793,45395
+step6_v2_pers_resid_cgega_ckpt,test,60,mae,19.604732513427734,45395
+step6_v2_pers_resid_cgega_ckpt,test,60,rmse,27.837926864624023,45395
+step6_v2_pers_resid_cgega_ckpt,test,90,mae,25.908977508544922,45395
+step6_v2_pers_resid_cgega_ckpt,test,90,rmse,36.29423141479492,45395

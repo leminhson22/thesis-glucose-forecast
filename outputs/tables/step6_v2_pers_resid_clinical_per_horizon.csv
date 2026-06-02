@@ -1,0 +1,13 @@
+model,split,horizon_min,metric,value,n_samples
+step6_v2_pers_resid_clinical,val,30,mae,14.466184616088867,45382
+step6_v2_pers_resid_clinical,val,30,rmse,20.022689819335938,45382
+step6_v2_pers_resid_clinical,val,60,mae,27.142730712890625,45382
+step6_v2_pers_resid_clinical,val,60,rmse,36.80057907104492,45382
+step6_v2_pers_resid_clinical,val,90,mae,35.52526092529297,45382
+step6_v2_pers_resid_clinical,val,90,rmse,47.93929672241211,45382
+step6_v2_pers_resid_clinical,test,30,mae,13.998579025268555,45395
+step6_v2_pers_resid_clinical,test,30,rmse,19.426843643188477,45395
+step6_v2_pers_resid_clinical,test,60,mae,25.97796630859375,45395
+step6_v2_pers_resid_clinical,test,60,rmse,35.4020881652832,45395
+step6_v2_pers_resid_clinical,test,90,mae,33.80659866333008,45395
+step6_v2_pers_resid_clinical,test,90,rmse,45.614994049072266,45395
