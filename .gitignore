@@ -50,8 +50,8 @@ KT.NC.SV.25_43.md
 hybrid_CNN_GRU.txt
 
 # App/deployment scratch
-app.py
-app/
+app/*.log
+app/__pycache__/
 .hf_space_deploy_*/
 .streamlit/
 
@@ -65,6 +65,10 @@ skills/
 references/
 
 # Non-core local data/notebook/script material retained only on this machine.
+.tmp_all_in_one_*/
+colab_all_in_one_*
+glucose_thesis_all_in_one_paste.py
+mau-bia-thu-hoach.doc
 data/READMY.md
 data/data_hupa/
 data/processed/hupa_5min_trajectory_y.npy
@@ -74,17 +78,22 @@ outputs/*.txt
 src/_build_*.py
 src/_clean_citations_apa.py
 src/build_*.py
-src/eval_step6_v3_seq2seq.py
+src/eval_step6_v3_*.py
 src/generate_*.py
 src/hupa_*.py
 src/insert_prediction_sigma_figure.py
 src/make_*.py
 src/plot_*.py
 src/render_*.py
-src/run_gbm_1000.py
-src/run_main_hybrid.py
-src/run_step6_v3_seq2seq.py
-src/run_step7_stacked.py
+src/run_*.py
+!src/run_cg_ega.py
+!src/run_phase_a.py
+!src/run_phase_b.py
+!src/run_phase_c1.py
+!src/run_step6_v2.py
+!src/run_uq_aci.py
+!src/run_uq_conformal.py
+!src/run_xai_ig.py
 src/uom_to_hupa_feasibility.py
 src/verify_hupa.py
 
@@ -97,10 +106,58 @@ src/verify_hupa.py
 !outputs/
 !outputs/models/
 !outputs/models/scalers.json
+!outputs/models/ridge_phase_a.joblib
+!outputs/models/rf_phase_b.joblib
+!outputs/models/lstm_phase_c1.pt
+!outputs/models/gru_phase_c1.pt
 !outputs/models/step6_hybrid_v2_pers_resid.pt
 !outputs/tables/
-!outputs/tables/*.csv
-!outputs/tables/*.md
+!outputs/tables/hupa_*.csv
+!outputs/tables/hupa_*.md
+!outputs/tables/phase_a_*.csv
+!outputs/tables/phase_b_clarke.csv
+!outputs/tables/phase_b_patient_averaged.csv
+!outputs/tables/phase_b_per_horizon.csv
+!outputs/tables/phase_b_per_patient.csv
+!outputs/tables/phase_b_per_zone.csv
+!outputs/tables/phase_b_rf_top_importance.csv
+!outputs/tables/phase_b_summary.csv
+!outputs/tables/phase_c1_*.csv
+!outputs/tables/step6_v2_pers_resid_clarke.csv
+!outputs/tables/step6_v2_pers_resid_patient_averaged.csv
+!outputs/tables/step6_v2_pers_resid_per_horizon.csv
+!outputs/tables/step6_v2_pers_resid_per_patient.csv
+!outputs/tables/step6_v2_pers_resid_per_zone.csv
+!outputs/tables/step6_v2_pers_resid_summary.csv
+outputs/tables/step6_v2_*upgrade_summary.md
+!outputs/tables/uq_aci_coverage.csv
+!outputs/tables/uq_aci_alpha_trajectory.parquet
+!outputs/tables/uq_conformal_coverage.csv
+!outputs/tables/uq_conformal_quantiles.csv
+!outputs/tables/xai_ig_case_studies.parquet
+!outputs/tables/xai_ig_global_heatmap_h30.csv
+!outputs/tables/xai_ig_global_heatmap_h60.csv
+!outputs/tables/xai_ig_global_heatmap_h90.csv
+!outputs/tables/xai_ig_global_importance.csv
+!outputs/tables/xai_ig_temporal_focus.csv
+!outputs/tables/all_models_test_mae_summary.csv
+!outputs/tables/thesis/
+!outputs/tables/thesis/table_4_1_overall_mae_rmse_6models.md
+!outputs/tables/thesis/table_4_2_zone_mae_6models.md
+!outputs/tables/thesis/table_4_3_zone_rmse_6models.md
+outputs/tables/thesis/table_cgega_*.md
 
 !notebooks/
 !notebooks/00_colab_quickstart.ipynb
+
+!app.py
+!app/
+!app/streamlit_app.py
+!app/PLAN.md
+!app/assets/
+!app/assets/.gitkeep
+!app/assets/vnu_is_logo.png
+
+!.streamlit/
+!.streamlit/config.toml
+!.streamlit/secrets.example.toml

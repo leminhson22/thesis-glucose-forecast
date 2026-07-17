@@ -1,12 +1,9 @@
 """Step 5 Phase C.1 — LSTM + GRU baselines (local CLI runner).
 
 Trains LSTM and GRU recurrent models on the HUPA-UCM ``X_dynamic`` (B, 24, 17)
-plus ``X_static`` (B, 16) input — the same input contract as the Phase A/B
-flattened tree baselines, so Phase C.1 numbers are apples-to-apples vs.
-Ridge / RF / HistGB.
-
-Phase C.1 uses vanilla ``MultiHorizonMSE`` loss. Phase C.2 will switch to
-asymmetric / zone-weighted variants; Phase C.3 adds modality dropout.
+plus ``X_static`` (B, 16) input. Phase C.1 uses vanilla ``MultiHorizonMSE``
+loss and is compared against Persistence, Ridge Regression, Random Forest,
+and the proposed Hybrid CNN-GRU model in the saved result tables.
 
 Usage:
     python src/run_phase_c1.py                  # both LSTM and GRU, full
@@ -52,11 +49,6 @@ PROJECT_ROOT = _HERE.parent
 TABLES_DIR = PROJECT_ROOT / "outputs" / "tables"
 LOGS_DIR = PROJECT_ROOT / "outputs" / "logs"
 MODELS_DIR = PROJECT_ROOT / "outputs" / "models"
-
-# Phase B GBM-300 test pooled MAEs, used only for the end-of-run comparison
-# printout. Source: outputs/tables/phase_b_summary.csv (frozen 2026-05-19).
-GBM_300_TEST_MAE = {30: 10.40, 60: 19.77, 90: 26.27}
-
 
 def maybe_subsample_splits(splits: dict, n_train: int, n_eval: int, seed: int = C.SEED) -> dict:
     rng = np.random.default_rng(seed)
@@ -186,19 +178,6 @@ def main(debug: bool, model_choice: str, epochs_override: int | None) -> int:
     ]
     show = [c for c in show if c in compact.columns]
     print(compact[show].to_string(index=False))
-
-    print("\n========== vs GBM-300 (test pooled MAE, mg/dL) ==========")
-    test_compact = compact[compact["split"] == "test"]
-    for _, row in test_compact.iterrows():
-        h = int(row["horizon_min"])
-        mae = float(row["mae"])
-        delta = mae - GBM_300_TEST_MAE[h]
-        rel = 100.0 * delta / GBM_300_TEST_MAE[h]
-        print(
-            f"  {row['model']:30s} {h}m: MAE={mae:6.3f}  "
-            f"GBM-300={GBM_300_TEST_MAE[h]:.2f}  "
-            f"delta={delta:+.3f} ({rel:+.2f}%)"
-        )
 
     print(f"\n[done] elapsed = {time.time() - t_total:.1f}s")
     return 0

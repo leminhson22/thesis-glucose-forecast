@@ -1,4 +1,4 @@
-"""Baseline models for the HUPA-UCM glucose-forecasting thesis (Step 5 Phase A).
+"""Baseline models for the HUPA-UCM glucose-forecasting thesis.
 
 Implements:
   * ``PersistenceModel`` — predicts the current glucose for every future horizon.
@@ -10,6 +10,8 @@ Implements:
   * ``tune_ridge_alpha`` — fits Ridge under a small alpha grid, picks the alpha
     that minimises pooled val MAE averaged across the three horizons, and
     returns the corresponding model plus a tuning log.
+  * ``RandomForestBaseline`` — sklearn RandomForestRegressor over the same
+    flattened dynamic + static representation.
 
 Both models expose the same ``.predict(...)`` contract that returns a float32
 ``(N, 3)`` array of mg/dL forecasts at horizons (30, 60, 90) min.
@@ -262,73 +264,3 @@ class RandomForestBaseline:
         if top_k is not None:
             df = df.head(top_k)
         return df
-
-
-# ---------------------------------------------------------------------------
-# HistGradientBoosting baseline (Phase B)
-# ---------------------------------------------------------------------------
-
-class HistGBMBaseline:
-    """Three independent ``HistGradientBoostingRegressor`` heads, one per horizon.
-
-    sklearn's HistGB does not support multi-output natively, so we train one
-    model per horizon. Early stopping uses an internal 10 % validation slice of
-    the training set (kept disjoint from our external VAL split).
-    """
-
-    def __init__(
-        self,
-        max_iter: int = 300,
-        learning_rate: float = 0.05,
-        max_depth: int | None = 8,
-        min_samples_leaf: int = 20,
-        l2_regularization: float = 0.0,
-        early_stopping: bool = True,
-        n_iter_no_change: int = 20,
-        validation_fraction: float = 0.1,
-        random_state: int | None = None,
-    ):
-        from sklearn.ensemble import HistGradientBoostingRegressor
-
-        self._Cls = HistGradientBoostingRegressor
-        self.params = dict(
-            max_iter=int(max_iter),
-            learning_rate=float(learning_rate),
-            max_depth=max_depth,
-            min_samples_leaf=int(min_samples_leaf),
-            l2_regularization=float(l2_regularization),
-            early_stopping=bool(early_stopping),
-            n_iter_no_change=int(n_iter_no_change),
-            validation_fraction=float(validation_fraction),
-            random_state=random_state,
-        )
-        self.models_: list = []
-        self.feature_names_: list[str] | None = None
-        self.n_iters_used_: list[int] = []
-
-    def fit(
-        self,
-        X_dynamic: np.ndarray,
-        X_static: np.ndarray,
-        y: np.ndarray,
-        feature_names_dynamic: Sequence[str] | None = None,
-        feature_names_static: Sequence[str] | None = None,
-    ) -> "HistGBMBaseline":
-        X = flatten_window(X_dynamic, X_static)
-        self.models_ = []
-        self.n_iters_used_ = []
-        for h_idx in range(y.shape[1]):
-            m = self._Cls(**self.params)
-            m.fit(X, y[:, h_idx])
-            self.models_.append(m)
-            self.n_iters_used_.append(int(getattr(m, "n_iter_", -1)))
-        if feature_names_dynamic is not None and feature_names_static is not None:
-            self.feature_names_ = flat_feature_names(
-                feature_names_dynamic, feature_names_static, X_dynamic.shape[1]
-            )
-        return self
-
-    def predict(self, X_dynamic: np.ndarray, X_static: np.ndarray) -> np.ndarray:
-        X = flatten_window(X_dynamic, X_static)
-        preds = np.stack([m.predict(X) for m in self.models_], axis=1)
-        return preds.astype(np.float32)

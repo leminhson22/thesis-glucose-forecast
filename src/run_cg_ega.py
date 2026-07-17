@@ -16,7 +16,7 @@ Produces three Step 5 / Step 6 artefacts:
 Usage::
 
     python src/run_cg_ega.py            # all models present in the parquet
-    python src/run_cg_ega.py --models step6_hybrid,gbm_n300
+    python src/run_cg_ega.py --models persistence,ridge_a0.1,rf_n300,lstm_phase_c1,gru_phase_c1,step6_hybrid_v2_pers_resid
 
 Notes:
 * The master parquet must contain ``model``, ``split``, ``sample_idx``,

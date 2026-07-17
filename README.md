@@ -11,25 +11,43 @@ ahead from:
 - patient-level static features: `X_static` with shape `(N, 16)`;
 - an appended patient index used only by the persistence-residual wrapper.
 
-This repository intentionally keeps only the core files needed to reproduce
-the training and result tables in Google Colab. It does not include thesis
-drafts, full raw data dumps, generated Word documents, or non-core figures.
+This repository intentionally keeps only the interview-ready thesis artefacts:
+the six-model experimental pipeline, the processed HUPA-UCM bundle, selected
+checkpoints, result tables, and the Streamlit interface. It does not include
+thesis drafts, full raw data dumps, temporary verification folders, or
+non-core experimental branches.
+
+## Model scope
+
+The public repository is scoped to the models presented in the thesis demo:
+
+- Persistence
+- Ridge Regression
+- Random Forest
+- LSTM
+- GRU
+- Hybrid CNN-GRU-Attention with Persistence-Residual Learning (proposed)
 
 ## Included core files
 
 - `src/preprocessing.py`, `src/data_loading.py`, `src/config.py`: data
   cleaning, feature engineering, normalization, split, and sequence building.
-- `src/baselines.py`: Persistence, Ridge, Random Forest, and GBM baselines.
+- `src/baselines.py`: Persistence, Ridge, and Random Forest baselines.
 - `src/models.py`: LSTM/GRU baselines and the proposed Hybrid CNN-GRU model.
 - `src/run_phase_*.py`: baseline training/evaluation entry points.
-- `src/run_step6_v2.py`: proposed model and ablation entry point.
+- `src/run_step6_v2.py`: proposed model training/evaluation entry point.
 - `src/evaluate.py`, `src/losses.py`, `src/train.py`, `src/datasets.py`:
   shared training and evaluation utilities.
 - `data/processed/hupa_5min_sequences.npz`: train-ready sequence bundle.
 - `outputs/models/scalers.json`: fitted normalization parameters.
+- `outputs/models/ridge_phase_a.joblib`, `rf_phase_b.joblib`,
+  `lstm_phase_c1.pt`, `gru_phase_c1.pt`: selected baseline checkpoints.
 - `outputs/models/step6_hybrid_v2_pers_resid.pt`: selected proposed-model
   checkpoint.
-- `outputs/tables/*.csv`: saved comparison and main-model result tables.
+- `outputs/tables/`: selected EDA, preprocessing, model-comparison, UQ, and
+  XAI result tables for the six-model thesis narrative.
+- `app.py`, `app/streamlit_app.py`, `.streamlit/config.toml`: Streamlit
+  dashboard for local or Hugging Face Spaces demonstration.
 
 ## Google Colab quick start
 
@@ -49,6 +67,24 @@ For full reproduction of the proposed model result, use:
 ```bash
 python src/run_step6_v2.py --variant pers_resid --epochs 30
 ```
+
+## Streamlit dashboard
+
+Run the local dashboard with:
+
+```bash
+streamlit run app.py
+```
+
+Then open:
+
+```text
+http://localhost:8501
+```
+
+The dashboard is a research-only demonstration. It loads the selected proposed
+model checkpoint, precomputed Mondrian-ACI prediction intervals, and Integrated
+Gradients explanation artefacts from `outputs/`.
 
 ## Data contract
 
