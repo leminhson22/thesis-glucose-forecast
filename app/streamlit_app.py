@@ -495,6 +495,28 @@ def load_aci_intervals() -> pd.DataFrame:
     return intervals
 
 
+def load_clinical_metadata(static_csv: pd.DataFrame) -> pd.DataFrame:
+    """Load UI metadata without requiring the non-public raw HUPA folder."""
+    try:
+        clinical_df = load_patient_characteristics(ROOT).copy()
+    except FileNotFoundError:
+        clinical_df = pd.DataFrame({"participant_id": static_csv["participant_id"].astype(str)})
+        if "gender_Female" in static_csv.columns:
+            clinical_df["gender"] = np.where(static_csv["gender_Female"] >= 0.5, "Female", "Male")
+        else:
+            clinical_df["gender"] = "n/a"
+        if "treatment_CSII" in static_csv.columns:
+            clinical_df["treatment"] = np.where(static_csv["treatment_CSII"] >= 0.5, "CSII", "MDI")
+        else:
+            clinical_df["treatment"] = "n/a"
+        clinical_df["age_years"] = np.nan
+        clinical_df["hba1c_pct"] = np.nan
+        clinical_df["bmi"] = np.nan
+
+    clinical_df.loc[clinical_df["participant_id"] == "HUPA0011P", "treatment"] = "MDI"
+    return clinical_df
+
+
 @st.cache_resource(show_spinner="Loading test split + checkpoints …")
 def load_everything():
     splits = load_npz_splits(ROOT / C.SEQUENCES_NPZ)
@@ -514,9 +536,7 @@ def load_everything():
     intervals = load_aci_intervals()
     cases = pd.read_parquet(TABLES / "xai_ig_case_studies.parquet")
     static_csv = pd.read_csv(ROOT / "data" / "processed" / "hupa_static_features.csv")
-    clinical_df = load_patient_characteristics(ROOT)
-    # Keep the UI consistent with the modelling pipeline override.
-    clinical_df.loc[clinical_df["participant_id"] == "HUPA0011P", "treatment"] = "MDI"
+    clinical_df = load_clinical_metadata(static_csv)
     global_imp = pd.read_csv(TABLES / "xai_ig_global_importance.csv")
 
     return {

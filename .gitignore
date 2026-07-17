@@ -81,6 +81,7 @@ src/build_*.py
 src/eval_step6_v3_*.py
 src/generate_*.py
 src/hupa_*.py
+!src/hupa_eda.py
 src/insert_prediction_sigma_figure.py
 src/make_*.py
 src/plot_*.py
@@ -130,6 +131,7 @@ src/verify_hupa.py
 !outputs/tables/step6_v2_pers_resid_per_zone.csv
 !outputs/tables/step6_v2_pers_resid_summary.csv
 outputs/tables/step6_v2_*upgrade_summary.md
+!outputs/tables/step6_v2_predictions.parquet
 !outputs/tables/uq_aci_coverage.csv
 !outputs/tables/uq_aci_alpha_trajectory.parquet
 !outputs/tables/uq_conformal_coverage.csv
@@ -142,8 +144,11 @@ outputs/tables/step6_v2_*upgrade_summary.md
 !outputs/tables/xai_ig_temporal_focus.csv
 !outputs/tables/all_models_test_mae_summary.csv
 !outputs/tables/thesis/
+!outputs/tables/thesis/table_4_1_overall_mae_rmse_6models.csv
 !outputs/tables/thesis/table_4_1_overall_mae_rmse_6models.md
+!outputs/tables/thesis/table_4_2_zone_mae_6models.csv
 !outputs/tables/thesis/table_4_2_zone_mae_6models.md
+!outputs/tables/thesis/table_4_3_zone_rmse_6models.csv
 !outputs/tables/thesis/table_4_3_zone_rmse_6models.md
 outputs/tables/thesis/table_cgega_*.md
 

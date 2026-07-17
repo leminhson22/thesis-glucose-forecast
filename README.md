@@ -32,10 +32,16 @@ The public repository is scoped to the models presented in the thesis demo:
 
 - `src/preprocessing.py`, `src/data_loading.py`, `src/config.py`: data
   cleaning, feature engineering, normalization, split, and sequence building.
+- `src/hupa_eda.py`: EDA runner for the raw HUPA-UCM folder when the raw
+  dataset is available locally.
 - `src/baselines.py`: Persistence, Ridge, and Random Forest baselines.
 - `src/models.py`: LSTM/GRU baselines and the proposed Hybrid CNN-GRU model.
 - `src/run_phase_*.py`: baseline training/evaluation entry points.
 - `src/run_step6_v2.py`: proposed model training/evaluation entry point.
+- `src/eval_step6_v2.py`: checkpoint evaluation and prediction-parquet export
+  for UQ.
+- `src/rebuild_thesis_tables.py`: rebuilds Table 4.1-4.3 from tracked
+  evaluation CSVs.
 - `src/evaluate.py`, `src/losses.py`, `src/train.py`, `src/datasets.py`:
   shared training and evaluation utilities.
 - `data/processed/hupa_5min_sequences.npz`: train-ready sequence bundle.
@@ -46,6 +52,8 @@ The public repository is scoped to the models presented in the thesis demo:
   checkpoint.
 - `outputs/tables/`: selected EDA, preprocessing, model-comparison, UQ, and
   XAI result tables for the six-model thesis narrative.
+- `outputs/tables/step6_v2_predictions.parquet`: proposed-model validation
+  and test predictions used by the UQ runners.
 - `app.py`, `app/streamlit_app.py`, `.streamlit/config.toml`: Streamlit
   dashboard for local or Hugging Face Spaces demonstration.
 
@@ -66,6 +74,50 @@ For full reproduction of the proposed model result, use:
 
 ```bash
 python src/run_step6_v2.py --variant pers_resid --epochs 30
+```
+
+## Rebuild result tables
+
+The headline thesis tables can be regenerated from the result CSVs already
+tracked in this repository:
+
+```bash
+python src/rebuild_thesis_tables.py
+```
+
+This rewrites:
+
+- `outputs/tables/thesis/table_4_1_overall_mae_rmse_6models.md`
+- `outputs/tables/thesis/table_4_2_zone_mae_6models.md`
+- `outputs/tables/thesis/table_4_3_zone_rmse_6models.md`
+
+For example, Table 4.1 is built from `phase_a_summary.csv`,
+`phase_b_summary.csv`, `phase_c1_summary.csv`, and
+`step6_v2_pers_resid_summary.csv`, using the test split only and the six
+models listed above.
+
+## Recompute UQ and XAI artefacts
+
+The proposed-model prediction parquet is already tracked, so the UQ runners
+can be run directly after installation:
+
+```bash
+python src/run_uq_conformal.py
+python src/run_uq_aci.py
+```
+
+To regenerate that prediction parquet from the shipped checkpoint, run this
+first on a machine with enough RAM:
+
+```bash
+python src/eval_step6_v2.py
+```
+
+The Integrated Gradients artefacts can be regenerated from the checkpoint and
+processed sequence bundle:
+
+```bash
+python src/run_xai_ig.py --n-global 600 --n-cases 30 --ig-steps 50
 ```
 
 ## Streamlit dashboard

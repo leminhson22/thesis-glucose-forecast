@@ -20,7 +20,7 @@ if str(_HERE) not in sys.path:
 
 import config as C  # noqa: E402
 from datasets import load_npz_splits  # noqa: E402
-from evaluate import cg_ega_from_predictions, cg_ega_summary, evaluate_model, zone_of  # noqa: E402
+from evaluate import compact_summary, cg_ega_from_predictions, cg_ega_summary, evaluate_model, zone_of  # noqa: E402
 from models import HybridCNNGRUPersResid  # noqa: E402
 from run_step6_v2 import attach_pid_index_to_static, load_pid_scaler_table  # noqa: E402
 
@@ -121,6 +121,7 @@ def main() -> int:
     )
 
     pred_frames: list[pd.DataFrame] = []
+    compact_frames: list[pd.DataFrame] = []
     for split_name in ("val", "test"):
         sp = work_splits[split_name]
         y_pred = predict_on_split(model, sp)
@@ -139,9 +140,13 @@ def main() -> int:
             "clarke_eg": "clarke",
         }.items():
             bundle[key].to_csv(TABLES_DIR / f"step6_v2_pers_resid_{suffix}.csv", index=False)
+        compact_frames.append(compact_summary(bundle))
         pred_frames.append(build_predictions_df(split_name, sp, y_pred))
 
     pred_df = pd.concat(pred_frames, ignore_index=True)
+    compact = pd.concat(compact_frames, ignore_index=True)
+    compact.to_csv(TABLES_DIR / "step6_v2_pers_resid_summary.csv", index=False)
+    pred_df.to_parquet(TABLES_DIR / "step6_v2_predictions.parquet", index=False)
     cg_detail = cg_ega_from_predictions(
         pred_df,
         group_keys=("model", "split", "participant_id", "horizon_min"),
